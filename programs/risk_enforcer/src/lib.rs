@@ -8,10 +8,13 @@ declare_id!("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS");
 
 #[program]
 pub mod risk_enforcer {
+    use mango::state::MAX_PERP_OPEN_ORDERS;
+
     use super::*;
-    pub fn initialize(ctx: Context<Initialize>, _sym: String) -> ProgramResult {
+    pub fn initialize(ctx: Context<Initialize>, market_index: u8, _sym: String) -> ProgramResult {
         let risk_account = &mut ctx.accounts.risk_account;
         risk_account.authority = *ctx.accounts.authority.key;
+        risk_account.market_index = market_index;
         Ok(())
     }                       
 
@@ -47,7 +50,24 @@ pub mod risk_enforcer {
         ctx: Context<CheckRiskParameters>,
         expected_position: u64
     ) -> ProgramResult {
-        Ok(())
+        let risk_account = &mut ctx.accounts.risk_account;
+
+        let mango_account_order_market = MangoAccount::load_checked(
+            &ctx.accounts.mango_account.to_account_info(),
+            ctx.accounts.mango_program.key,
+            ctx.accounts.mango_group.key,
+        )
+        .unwrap().order_market;
+        let mut open_order_cnt: u8 = 0;
+        for i in 0..MAX_PERP_OPEN_ORDERS {
+            if mango_account_order_market[i] == risk_account.market_index {
+                open_order_cnt += 1;
+            }
+        }
+        if open_order_cnt > risk_account.param_max_open_orders {
+            return Err(ErrorCode::ExceededMaxOpenOrders.into());
+        }
+        return Ok(());
      }
 
     pub fn check_and_set_sequence_number(
@@ -68,7 +88,7 @@ pub mod risk_enforcer {
 }
 
 #[derive(Accounts)]
-#[instruction(sym: String)]
+#[instruction(market_index: u8, sym: String)]
 pub struct Initialize<'info> {
     #[account(init,
         payer=authority, 
@@ -91,7 +111,9 @@ pub struct CheckRiskParameters<'info> {
     #[account(mut, has_one=authority)]
     pub risk_account: Account<'info, RiskAccount>,
     pub authority: Signer<'info>,
-    pub mango_account: UncheckedAccount<'info>
+    pub mango_account: UncheckedAccount<'info>,
+    pub mango_program: UncheckedAccount<'info>,
+    pub mango_group: UncheckedAccount<'info>
 }
 
 #[derive(Accounts)]
@@ -112,6 +134,7 @@ pub struct CheckAndSetSequenceNumber<'info> {
 #[derive(Default)]
 pub struct RiskAccount {
     pub authority: Pubkey,
+    pub market_index: u8,
     pub sequence_num: u64,
     // Max number of concurrent open orders
     pub param_max_open_orders: u8,

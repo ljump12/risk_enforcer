@@ -10,7 +10,9 @@ describe('risk_enforcer', () => {
   const program = anchor.workspace.RiskEnforcer as Program<RiskEnforcer>;
 
   it('Is initialized!', async () => {
-    const tx = await program.methods.initialize("test").accounts({
+    // market_index = 2 (BTC)
+    // sym = test
+    const tx = await program.methods.initialize(2, "test").accounts({
       authority: program.provider.wallet.publicKey,
     }).rpc();
     console.log("Your transaction signature", tx);
